@@ -1,0 +1,17 @@
+{
+    "XAxisNo": 0,
+    "Columns": {
+        "K": {
+            "YAxis": false
+        },
+        "R": {
+            "YAxis": false
+        },
+        "U": {
+            "YAxis": true
+        },
+        "W": {
+            "YAxis": true
+        }
+    }
+}
