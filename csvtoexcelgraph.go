@@ -32,19 +32,21 @@ var rCRLF = strings.NewReplacer(
 )
 
 type Graph struct {
-	yaxislist []int
-	colmap    map[int]struct{}
+	xaxis       int
+	secondaries []int
+	colmap      map[int]struct{}
 }
 
 type Column struct {
-	Title          string `json:",omitempty"`
+	YAxis          string
+	YAxisTitle     string `json:",omitempty"`
 	YAxisSecondary bool   `json:",omitempty"`
 }
 
 type Config struct {
 	XAxis      string
-	XAxisTitle string
-	Columns    map[string]Column
+	XAxisTitle string `json:",omitempty"`
+	Columns    []Column
 
 	cdir     string
 	current  string
@@ -363,7 +365,7 @@ func (c Config) CreateGraph(rp string) (string, error) {
 	// スレッドを固定する
 	runtime.LockOSThread()
 	// グラフ描画
-	err = format.Excelgraph(dp, wp, ip, g.yaxislist)
+	err = format.Excelgraph(dp, wp, ip, g.secondaries)
 	// スレッドの固定を解除する
 	runtime.UnlockOSThread()
 	os.Remove(dp)
@@ -387,41 +389,43 @@ func (c Config) ReduceCSV(rp, wp string) (*Graph, error) {
 	defer wfp.Close()
 	// 各種初期化
 	hmax := 0
+	columnlist := []int{}
 	g := &Graph{}
 	g.colmap = make(map[int]struct{})
-	g.yaxislist = []int{}
+	g.xaxis = int(parseColumn(c.XAxis))
 
 	r := bufio.NewScanner(rfp)
 	// ヘッダー
 	if r.Scan() {
-		line := r.Text()
 		headers := []string{}
-		cells := strings.Split(line, ",")
-		xaxis := c.XAxis
-		if xaxis == "" {
-			xaxis = "A"
+		cells := strings.Split(r.Text(), ",")
+		hmax = len(cells)
+		// X軸設定
+		if g.xaxis < hmax {
+			cell := cells[g.xaxis]
+			if c.XAxisTitle != "" {
+				cell = c.XAxisTitle
+			}
+			headers = append(headers, cell)
+			columnlist = append(columnlist, g.xaxis)
+		} else {
+			return nil, errors.New("X軸設定が変です")
 		}
-		for i, cell := range cells {
-			fc := formatColumn(uint64(i))
-			col, ok := c.Columns[fc]
-			if fc == xaxis {
-				g.colmap[i] = struct{}{}
-				if c.XAxisTitle != "" {
-					cell = c.XAxisTitle
+		// Y軸設定
+		for _, it := range c.Columns {
+			col := int(parseColumn(it.YAxis))
+			if col < hmax {
+				cell := cells[col]
+				if it.YAxisSecondary {
+					g.secondaries = append(g.secondaries, len(headers))
+				}
+				if it.YAxisTitle != "" {
+					cell = it.YAxisTitle
 				}
 				headers = append(headers, cell)
-			} else if ok {
-				g.colmap[i] = struct{}{}
-				if col.YAxisSecondary {
-					g.yaxislist = append(g.yaxislist, len(headers))
-				}
-				if col.Title != "" {
-					cell = col.Title
-				}
-				headers = append(headers, cell)
+				columnlist = append(columnlist, col)
 			}
 		}
-		hmax = len(cells)
 		fmt.Fprint(wfp, strings.Join(headers, ",")+"\r\n")
 	} else {
 		return nil, errors.New("読み取れなかったよ")
@@ -433,19 +437,17 @@ func (c Config) ReduceCSV(rp, wp string) (*Graph, error) {
 			return nil, errors.New("csvのカンマの数が少ないよ")
 		}
 		lines := []string{}
-		for i, it := range cells {
-			if _, ok := g.colmap[i]; ok {
-				lines = append(lines, it)
-			}
+		for _, it := range columnlist {
+			lines = append(lines, cells[it])
 		}
 		fmt.Fprint(wfp, strings.Join(lines, ",")+"\r\n")
 	}
 	return g, nil
 }
 
+// Go標準ライブラリ[src/strconv/itoa.go formatBits]から丸パクリ
 const digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-// Go標準ライブラリ[src/strconv/itoa.go formatBits]から丸パクリ
 func formatColumn(u uint64) string {
 	var a [64 + 1]byte
 	i := len(a)
@@ -458,6 +460,49 @@ func formatColumn(u uint64) string {
 	i--
 	a[i] = digits[uint(u)]
 	return string(a[i:])
+}
+
+// Go標準ライブラリ[src/strconv/atoi.go ParseUint]から丸パクリ
+const intSize = 32 << (^uint(0) >> 63)
+const maxUint64 = 1<<64 - 1
+
+func lower(c byte) byte {
+	return c | ('x' - 'X')
+}
+func parseColumn(s string) uint64 {
+	if s == "" {
+		return 0
+	}
+	bitSize := int(intSize)
+	maxVal := uint64(1)<<uint(bitSize) - 1
+	var cutoff uint64 = maxUint64/26 + 1
+	var n uint64
+	for _, c := range []byte(s) {
+		var d byte
+		switch {
+		case 'a' <= lower(c) && lower(c) <= 'z':
+			d = lower(c) - 'a'
+		default:
+			return 0
+		}
+		if d >= 26 {
+			return 0
+		}
+
+		if n >= cutoff {
+			// n*base overflows
+			return maxVal
+		}
+		n *= 26
+
+		n1 := n + uint64(d)
+		if n1 < n || n1 > maxVal {
+			// n+v overflows
+			return maxVal
+		}
+		n = n1
+	}
+	return n
 }
 
 func regenePNG(ip string) error {
