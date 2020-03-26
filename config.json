@@ -1,17 +1,17 @@
 {
-    "XAxisNo": 0,
+    "XAxis": "A",
     "Columns": {
         "K": {
-            "YAxis": false
+            "YAxisSecondary": false
         },
         "R": {
-            "YAxis": false
+            "YAxisSecondary": false
         },
         "U": {
-            "YAxis": true
+            "YAxisSecondary": true
         },
         "W": {
-            "YAxis": true
+            "YAxisSecondary": true
         }
     }
 }

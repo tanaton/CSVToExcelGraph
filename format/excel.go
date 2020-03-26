@@ -49,8 +49,9 @@ func (ex *ExcelGraph) createChartObject(sheet *excel.Worksheet, x, y, xx, yy int
 }
 
 // グラフに描画するためのデータを取得
-func (ex *ExcelGraph) getGraphRange(sheet *excel.Worksheet) []GraphItem {
+func (ex *ExcelGraph) getGraphRange(sheet *excel.Worksheet) (string, []GraphItem) {
 	x := 1
+	xname := ""
 	arr := []GraphItem{}
 	maxCol := sheet.GetCells().GetItem(1, sheet.GetColumns().GetCount()).GetEnd(excel.XlToLeft).GetColumn() + 1
 
@@ -59,6 +60,10 @@ func (ex *ExcelGraph) getGraphRange(sheet *excel.Worksheet) []GraphItem {
 		v := sheet.GetCells().GetItem(1, x).GetValue()
 		if v.Value() == nil || sheet.Err != nil {
 			break
+		}
+		if x == 1 {
+			// X軸の名称を取得
+			xname = v.ToString()
 		}
 
 		// 列の探索
@@ -82,13 +87,13 @@ func (ex *ExcelGraph) getGraphRange(sheet *excel.Worksheet) []GraphItem {
 		arr = append(arr, item)
 		x = i + 1
 	}
-	return arr
+	return xname, arr
 }
 
 // シートからグラフを作る
 func (ex *ExcelGraph) sheetToChart(g *excel.ChartObject, sheet *excel.Worksheet, secondary []int) {
 	j := 1
-	arr := ex.getGraphRange(sheet)
+	xname, arr := ex.getGraphRange(sheet)
 	if len(arr) <= 0 {
 		fmt.Println("シートにグラフ化できるデータが無いみたい")
 		return
@@ -134,7 +139,7 @@ func (ex *ExcelGraph) sheetToChart(g *excel.ChartObject, sheet *excel.Worksheet,
 		}
 	}
 	// グラフの軸についての設定
-	ex.setGraphAxis(g, strings.Join(priname, " / "))
+	ex.setGraphAxis(g, xname, strings.Join(priname, " / "))
 	// 指定した要素を第二軸へ移動
 	if len(secondary) > 0 {
 		ex.setGraphAxisSecondary(g, strings.Join(secname, " / "))
@@ -142,7 +147,7 @@ func (ex *ExcelGraph) sheetToChart(g *excel.ChartObject, sheet *excel.Worksheet,
 }
 
 // グラフの軸を設定
-func (ex *ExcelGraph) setGraphAxis(g *excel.ChartObject, name string) {
+func (ex *ExcelGraph) setGraphAxis(g *excel.ChartObject, xname, yname string) {
 	chart := g.GetChart()
 	cp := chart.Axes(excel.XlCategory, excel.XlPrimary)
 	vp := chart.Axes(excel.XlValue, excel.XlPrimary)
@@ -155,13 +160,11 @@ func (ex *ExcelGraph) setGraphAxis(g *excel.ChartObject, name string) {
 	// 目盛線の位置を下に移動
 	cp.SetTickLabelPosition(excel.XlTickLabelPositionLow)
 	// X軸ラベルを表示
-	//cp.SetHasTitle(true)
-	//cat := cp.GetAxisTitle()
-	//cat.SetText("経過時間 (秒)")
+	cp.SetHasTitle(true)
+	cp.GetAxisTitle().SetText(xname)
 	// Y軸ラベルを表示
 	vp.SetHasTitle(true)
-	vat := vp.GetAxisTitle()
-	vat.SetText(name)
+	vp.GetAxisTitle().SetText(yname)
 }
 
 // 指定した要素を第二軸に移動

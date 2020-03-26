@@ -37,13 +37,14 @@ type Graph struct {
 }
 
 type Column struct {
-	Title string `json:",omitempty"`
-	YAxis bool   `json:",omitempty"`
+	Title          string `json:",omitempty"`
+	YAxisSecondary bool   `json:",omitempty"`
 }
 
 type Config struct {
-	XAxisNo int
-	Columns map[string]Column
+	XAxis      string
+	XAxisTitle string
+	Columns    map[string]Column
 
 	cdir     string
 	current  string
@@ -149,7 +150,7 @@ func gui(ctx context.Context, cdir string) error {
 		Layout:   declarative.VBox{},
 		OnDropFiles: func(files []string) {
 			if mmw.converting {
-				log.Infow("グラフ生成中の新しいドロップは無視されます。")
+				log.Infow("グラフ生成中に新しくドロップされたファイルは無視されます。")
 			} else if checkExtList(files, ".csv") {
 				mmw.converting = true
 				num := runtime.NumCPU()
@@ -396,17 +397,28 @@ func (c Config) ReduceCSV(rp, wp string) (*Graph, error) {
 		line := r.Text()
 		headers := []string{}
 		cells := strings.Split(line, ",")
-		for i, it := range cells {
-			col, ok := c.Columns[formatColumn(uint64(i))]
-			if i == c.XAxisNo {
+		xaxis := c.XAxis
+		if xaxis == "" {
+			xaxis = "A"
+		}
+		for i, cell := range cells {
+			fc := formatColumn(uint64(i))
+			col, ok := c.Columns[fc]
+			if fc == xaxis {
 				g.colmap[i] = struct{}{}
-				headers = append(headers, "xaxis")
+				if c.XAxisTitle != "" {
+					cell = c.XAxisTitle
+				}
+				headers = append(headers, cell)
 			} else if ok {
 				g.colmap[i] = struct{}{}
-				if col.YAxis {
+				if col.YAxisSecondary {
 					g.yaxislist = append(g.yaxislist, len(headers))
 				}
-				headers = append(headers, it)
+				if col.Title != "" {
+					cell = col.Title
+				}
+				headers = append(headers, cell)
 			}
 		}
 		hmax = len(cells)
