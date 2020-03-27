@@ -16,6 +16,7 @@ import (
 
 	"github.com/tanaton/CSVToExcelGraph/app/config"
 	"github.com/tanaton/CSVToExcelGraph/app/graph"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -24,15 +25,10 @@ var pngEncoder = png.Encoder{
 	CompressionLevel: png.BestCompression,
 	BufferPool:       NewPngPool(),
 }
-var rCRLF = strings.NewReplacer(
-	"\r\n", "\r\n",
-	"\n", "\r\n",
-)
 
 type Graph struct {
 	xaxis       int
 	secondaries []int
-	colmap      map[int]struct{}
 }
 
 var log *zap.SugaredLogger
@@ -62,7 +58,7 @@ func Gui(ctx context.Context, cdir string) error {
 	}
 	mmw := &MyMainWindow{
 		conf:       c,
-		converting: false,
+		converting: atomic.NewBool(false),
 	}
 	// ログ更新
 	UpdateLogger(mmw)
@@ -127,22 +123,24 @@ func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 		return nil, err
 	}
 	defer rfp.Close()
-	wfp, werr := os.Create(wp)
+	rawwfp, werr := os.Create(wp)
 	if werr != nil {
 		return nil, werr
 	}
-	defer wfp.Close()
+	defer rawwfp.Close()
+	wfp := bufio.NewWriterSize(rawwfp, 128*1024)
 	// 各種初期化
 	hmax := 0
-	columnlist := []int{}
-	g := &Graph{}
-	g.colmap = make(map[int]struct{})
-	g.xaxis = int(parseColumn(c.XAxis))
+	columnlist := make([]int, len(c.Columns)+1)
+	g := &Graph{
+		xaxis:       int(parseColumn(c.XAxis)),
+		secondaries: make([]int, 0, len(c.Columns)),
+	}
 
 	r := bufio.NewScanner(rfp)
 	// ヘッダー
 	if r.Scan() {
-		headers := []string{}
+		headers := make([]string, len(c.Columns)+1)
 		cells := strings.Split(r.Text(), ",")
 		hmax = len(cells)
 		// X軸設定
@@ -151,42 +149,44 @@ func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 			if c.XAxisTitle != "" {
 				cell = c.XAxisTitle
 			}
-			headers = append(headers, cell)
-			columnlist = append(columnlist, g.xaxis)
+			headers[0] = cell
+			columnlist[0] = g.xaxis
 		} else {
 			return nil, errors.New("X軸設定が変です")
 		}
 		// Y軸設定
-		for _, it := range c.Columns {
+		for i, it := range c.Columns {
 			col := int(parseColumn(it.YAxis))
-			if col < hmax {
-				cell := cells[col]
-				if it.YAxisSecondary {
-					g.secondaries = append(g.secondaries, len(headers))
-				}
-				if it.YAxisTitle != "" {
-					cell = it.YAxisTitle
-				}
-				headers = append(headers, cell)
-				columnlist = append(columnlist, col)
+			if col >= hmax {
+				continue
 			}
+			cell := cells[col]
+			if it.YAxisSecondary {
+				g.secondaries = append(g.secondaries, i+1)
+			}
+			if it.YAxisTitle != "" {
+				cell = it.YAxisTitle
+			}
+			headers[i+1] = cell
+			columnlist[i+1] = col
 		}
 		fmt.Fprint(wfp, strings.Join(headers, ",")+"\r\n")
 	} else {
 		return nil, errors.New("読み取れなかったよ")
 	}
 	// データ
+	columns := make([]string, len(columnlist))
 	for r.Scan() {
 		cells := strings.Split(r.Text(), ",")
 		if len(cells) < hmax-1 {
 			return nil, errors.New("csvのカンマの数が少ないよ")
 		}
-		lines := []string{}
-		for _, it := range columnlist {
-			lines = append(lines, cells[it])
+		for i, it := range columnlist {
+			columns[i] = cells[it]
 		}
-		fmt.Fprint(wfp, strings.Join(lines, ",")+"\r\n")
+		fmt.Fprint(wfp, strings.Join(columns, ",")+"\r\n")
 	}
+	wfp.Flush()
 	return g, nil
 }
 

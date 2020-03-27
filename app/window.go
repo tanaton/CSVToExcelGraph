@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"runtime"
+	"strings"
 
 	"github.com/lxn/walk"
 	"github.com/lxn/walk/declarative"
 	"github.com/tanaton/CSVToExcelGraph/app/config"
+	"go.uber.org/atomic"
 )
 
 type MyMainWindow struct {
@@ -16,51 +18,22 @@ type MyMainWindow struct {
 	xcImage           *walk.ImageView
 	xcEditLog         *walk.TextEdit
 	conf              *config.Config
-	converting        bool
+	converting        *atomic.Bool
 }
+
+var rCRLF = strings.NewReplacer(
+	"\r\n", "\r\n",
+	"\n", "\r\n",
+)
 
 func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 	// ダイアログオブジェクト生成
 	dialog := declarative.MainWindow{
-		AssignTo: &mmw.MainWindow,
-		Title:    "CSVToExcelGraph",
-		Size:     declarative.Size{Width: 800, Height: 600},
-		Layout:   declarative.VBox{},
-		OnDropFiles: func(files []string) {
-			if mmw.converting {
-				log.Infow("グラフ生成中に新しくドロップされたファイルは無視されます。")
-			} else if checkExtList(files, ".csv") {
-				mmw.converting = true
-				num := runtime.NumCPU()
-				log.Infow("ファイルがドロップされました。", "ファイル数", len(files), "並列数", num)
-				// メッセージループを止めないようにgoroutineを起動させる
-				go func(files []string, num int) {
-					c := make(chan struct{}, num)
-					defer func() {
-						close(c)
-						mmw.converting = false
-					}()
-					for _, file := range files {
-						c <- struct{}{}
-						// ある程度並列で動作させる
-						go func(file string) {
-							defer func() {
-								<-c
-							}()
-							// グラフ化実行
-							mmw.CreateGraph(file)
-						}(file)
-					}
-					// 並列で動作している処理の待機
-					for num > 0 {
-						num--
-						c <- struct{}{}
-					}
-				}(files, num)
-			} else {
-				log.Infow("csv以外の拡張子のファイルはグラフ化できません。")
-			}
-		},
+		AssignTo:    &mmw.MainWindow,
+		Title:       "CSVToExcelGraph",
+		Size:        declarative.Size{Width: 800, Height: 600},
+		Layout:      declarative.VBox{},
+		OnDropFiles: mmw.OnDropFiles,
 		Children: []declarative.Widget{
 			declarative.ComboBox{
 				AssignTo:     &mmw.xcComboConfigList,
@@ -126,15 +99,55 @@ func (mmw *MyMainWindow) Write(b []byte) (n int, err error) {
 	return len(b), nil
 }
 
-func (mmw *MyMainWindow) ReadConfigName(name string) {
-	mmw.conf.SetCurrent(name)
-	err := mmw.conf.Load()
-	if err != nil {
-		mmw.xcEditConfig.SetText("error")
-		log.Warnw("設定ファイル読み込み異常", "error", err)
+func (mmw *MyMainWindow) OnDropFiles(files []string) {
+	if mmw.converting.Load() {
+		log.Infow("グラフ生成中に新しくドロップされたファイルは無視されます。")
+	} else if checkExtList(files, ".csv") {
+		mmw.converting.Store(true)
+		num := runtime.NumCPU()
+		log.Infow("ファイルがドロップされました。", "ファイル数", len(files), "並列数", num)
+		// メッセージループを止めないようにgoroutineを起動させる
+		go func(files []string, num int) {
+			c := make(chan struct{}, num)
+			defer func() {
+				close(c)
+				mmw.converting.Store(false)
+			}()
+			for _, file := range files {
+				c <- struct{}{}
+				// ある程度並列で動作させる
+				go func(file string) {
+					defer func() {
+						<-c
+					}()
+					// グラフ化実行
+					mmw.CreateGraph(file)
+				}(file)
+			}
+			// 並列で動作している処理の待機
+			for num > 0 {
+				num--
+				c <- struct{}{}
+			}
+		}(files, num)
 	} else {
-		mmw.xcEditConfig.SetText(rCRLF.Replace(mmw.conf.Text()))
-		log.Infow("設定ファイルの読み込みができました。")
+		log.Infow("csv以外の拡張子のファイルはグラフ化できません。")
+	}
+}
+
+func (mmw *MyMainWindow) ReadConfigName(name string) {
+	err := mmw.conf.SetCurrent(name)
+	if err != nil {
+		log.Warnw("指定されたファイルがありません。", "error", err)
+	} else {
+		err = mmw.conf.Load()
+		if err != nil {
+			mmw.xcEditConfig.SetText("error")
+			log.Warnw("設定ファイル読み込み異常", "error", err)
+		} else {
+			mmw.xcEditConfig.SetText(rCRLF.Replace(mmw.conf.Text()))
+			log.Infow("設定ファイルの読み込みができました。")
+		}
 	}
 }
 

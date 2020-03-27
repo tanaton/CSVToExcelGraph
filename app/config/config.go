@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 )
@@ -52,11 +53,13 @@ func (c Config) GetNameList() []string {
 	return c.namelist
 }
 
-func (c *Config) SetCurrent(name string) {
+func (c *Config) SetCurrent(name string) error {
 	p, ok := c.namemap[name]
-	if ok {
-		c.current = p
+	if !ok {
+		return errors.New("ファイルがありません。：" + name)
 	}
+	c.current = p
+	return nil
 }
 
 func (c *Config) Load() error {
