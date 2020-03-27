@@ -31,7 +31,7 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 	dialog := declarative.MainWindow{
 		AssignTo:    &mmw.MainWindow,
 		Title:       "CSVToExcelGraph",
-		Size:        declarative.Size{Width: 800, Height: 600},
+		Size:        declarative.Size{Width: 1024, Height: 768},
 		Layout:      declarative.VBox{},
 		OnDropFiles: mmw.OnDropFiles,
 		Children: []declarative.Widget{
@@ -57,7 +57,7 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 						Background: declarative.SolidColorBrush{Color: walk.RGB(255, 191, 0)},
 						Margin:     3,
 						Mode:       declarative.ImageViewModeZoom,
-						MinSize:    declarative.Size{Width: 580, Height: 300},
+						MinSize:    declarative.Size{Width: 806, Height: 430},
 					},
 				},
 			},
