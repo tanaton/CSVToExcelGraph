@@ -6,6 +6,7 @@ import (
 
 	"github.com/lxn/walk"
 	"github.com/lxn/walk/declarative"
+	"github.com/tanaton/CSVToExcelGraph/app/config"
 )
 
 type MyMainWindow struct {
@@ -14,7 +15,7 @@ type MyMainWindow struct {
 	xcEditConfig      *walk.TextEdit
 	xcImage           *walk.ImageView
 	xcEditLog         *walk.TextEdit
-	config            *Config
+	conf              *config.Config
 	converting        bool
 }
 
@@ -41,13 +42,16 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 					}()
 					for _, file := range files {
 						c <- struct{}{}
+						// ある程度並列で動作させる
 						go func(file string) {
 							defer func() {
 								<-c
 							}()
+							// グラフ化実行
 							mmw.CreateGraph(file)
 						}(file)
 					}
+					// 並列で動作している処理の待機
 					for num > 0 {
 						num--
 						c <- struct{}{}
@@ -60,7 +64,7 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 		Children: []declarative.Widget{
 			declarative.ComboBox{
 				AssignTo:     &mmw.xcComboConfigList,
-				Model:        mmw.config.GetNameList(),
+				Model:        mmw.conf.GetNameList(),
 				CurrentIndex: 0, // 初期値
 				OnCurrentIndexChanged: func() {
 					txt := mmw.xcComboConfigList.Text()
@@ -73,7 +77,7 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 						AssignTo:  &mmw.xcEditConfig,
 						VScroll:   true,
 						MaxLength: 0x7FFFFFFF,
-						Text:      rCRLF.Replace(mmw.config.Text()),
+						Text:      rCRLF.Replace(mmw.conf.Text()),
 					},
 					declarative.ImageView{
 						AssignTo:   &mmw.xcImage,
@@ -123,20 +127,20 @@ func (mmw *MyMainWindow) Write(b []byte) (n int, err error) {
 }
 
 func (mmw *MyMainWindow) ReadConfigName(name string) {
-	mmw.config.SetCurrent(name)
-	err := mmw.config.Load()
+	mmw.conf.SetCurrent(name)
+	err := mmw.conf.Load()
 	if err != nil {
 		mmw.xcEditConfig.SetText("error")
 		log.Warnw("設定ファイル読み込み異常", "error", err)
 	} else {
-		mmw.xcEditConfig.SetText(rCRLF.Replace(mmw.config.Text()))
+		mmw.xcEditConfig.SetText(rCRLF.Replace(mmw.conf.Text()))
 		log.Infow("設定ファイルの読み込みができました。")
 	}
 }
 
 func (mmw *MyMainWindow) CreateGraph(rp string) {
 	log.Infow("グラフ生成開始", "path", rp)
-	if ip, err := CreateGraph(mmw.config, rp); err != nil {
+	if ip, err := CreateGraph(mmw.conf, rp); err != nil {
 		log.Warnw("グラフ生成異常", "error", err)
 	} else {
 		img, err := walk.NewImageFromFileForDPI(ip, 96)

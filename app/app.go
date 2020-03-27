@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/tanaton/CSVToExcelGraph/app/config"
 	"github.com/tanaton/CSVToExcelGraph/app/graph"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -35,33 +35,16 @@ type Graph struct {
 	colmap      map[int]struct{}
 }
 
-type Column struct {
-	YAxis          string
-	YAxisTitle     string `json:",omitempty"`
-	YAxisSecondary bool   `json:",omitempty"`
-}
-
-type Config struct {
-	XAxis      string
-	XAxisTitle string `json:",omitempty"`
-	Columns    []Column
-
-	cdir     string
-	current  string
-	namelist []string
-	namemap  map[string]string
-}
-
 var log *zap.SugaredLogger
 
 // Cui CUI用メイン処理
 func Cui(ctx context.Context, cdir, rp string) error {
-	config := NewConfig(cdir)
-	err := config.Load()
+	c := config.NewConfig(cdir)
+	err := c.Load()
 	if err != nil {
 		return err
 	}
-	if _, err := CreateGraph(config, rp); err != nil {
+	if _, err := CreateGraph(c, rp); err != nil {
 		log.Warnw("グラフ生成失敗", "error", err)
 	} else {
 		log.Infow("グラフ生成成功")
@@ -71,14 +54,14 @@ func Cui(ctx context.Context, cdir, rp string) error {
 
 // Gui GUI用メイン処理
 func Gui(ctx context.Context, cdir string) error {
-	config := NewConfig(cdir)
-	err := config.Load()
+	c := config.NewConfig(cdir)
+	err := c.Load()
 	if err != nil {
 		log.Warnw("設定ファイルの読み込みに失敗しました。", "error", err)
 		return err
 	}
 	mmw := &MyMainWindow{
-		config:     config,
+		conf:       c,
 		converting: false,
 	}
 	// ログ更新
@@ -112,7 +95,7 @@ func checkExtList(list []string, ext string) bool {
 	return true
 }
 
-func CreateGraph(c *Config, rp string) (string, error) {
+func CreateGraph(c *config.Config, rp string) (string, error) {
 	dir, name := filepath.Split(rp)
 	csvname := strings.TrimRight(name, filepath.Ext(rp)) + "_graph.csv"
 	dp, _ := filepath.Abs(filepath.Join(dir, csvname))
@@ -138,7 +121,7 @@ func CreateGraph(c *Config, rp string) (string, error) {
 	return ip, err
 }
 
-func ReduceCSV(c *Config, rp, wp string) (*Graph, error) {
+func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 	rfp, err := os.Open(rp)
 	if err != nil {
 		return nil, err
@@ -205,72 +188,6 @@ func ReduceCSV(c *Config, rp, wp string) (*Graph, error) {
 		fmt.Fprint(wfp, strings.Join(lines, ",")+"\r\n")
 	}
 	return g, nil
-}
-
-func NewConfig(cdir string) *Config {
-	c := &Config{
-		cdir: cdir,
-	}
-	c.init()
-	return c
-}
-
-func (c *Config) init() {
-	rowlist, err := filepath.Glob(filepath.Join(c.cdir, "*.json"))
-	if err != nil || len(rowlist) == 0 {
-		log.Warnw("設定ファイルが見つかりませんでした。", "error", err)
-		rowlist = []string{}
-	}
-	c.namelist = []string{}
-	c.namemap = make(map[string]string)
-	if len(rowlist) > 0 {
-		c.current = rowlist[0]
-		for _, path := range rowlist {
-			_, name := filepath.Split(path)
-			c.namelist = append(c.namelist, name)
-			c.namemap[name] = path
-		}
-	}
-}
-
-func (c Config) GetNameList() []string {
-	return c.namelist
-}
-
-func (c *Config) SetCurrent(name string) {
-	p, ok := c.namemap[name]
-	if ok {
-		c.current = p
-	} else {
-		log.Warnw("選択された設定ファイルが無いよ", "filename", name)
-	}
-}
-
-func (c *Config) Load() error {
-	return c.ReadFile(c.current)
-}
-
-func (c *Config) ReadFile(p string) error {
-	rfp, err := os.Open(p)
-	if err != nil {
-		return err
-	}
-	defer rfp.Close()
-	dec := json.NewDecoder(rfp)
-	return dec.Decode(c)
-}
-func (c Config) WriteFile(p string) error {
-	wfp, err := os.Create(p)
-	if err != nil {
-		return err
-	}
-	defer wfp.Close()
-	enc := json.NewEncoder(wfp)
-	return enc.Encode(c)
-}
-func (c Config) Text() string {
-	txt, _ := json.MarshalIndent(c, "", "  ")
-	return string(txt)
 }
 
 // Go標準ライブラリ[src/strconv/itoa.go formatBits]から丸パクリ
