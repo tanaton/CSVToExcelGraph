@@ -91,11 +91,10 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 }
 
 func (mmw *MyMainWindow) Write(b []byte) (n int, err error) {
-	str := rCRLF.Replace(string(b))
 	// メッセージループが重い処理等で停止していると制御が戻らなくなるので注意
 	// Synchronizeを挟むと回避できるが、メッセージループが停止する事自体が問題なのでそっちで気を付ける
 	//mmw.MainWindow.Synchronize(func() { mmw.xcEditLog.AppendText(str) })
-	mmw.xcEditLog.AppendText(str)
+	mmw.xcEditLog.AppendText(string(b))
 	return len(b), nil
 }
 
