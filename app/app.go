@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"image"
 	"image/png"
@@ -33,12 +34,26 @@ type Graph struct {
 
 var log *zap.SugaredLogger
 
+var (
+	confpath = flag.String("c", "config.json", "設定ファイルのパス")
+)
+
+func init() {
+	flag.Parse()
+}
+
 // Cui CUI用メイン処理
-func Cui(ctx context.Context, cdir, rp string) error {
+func Cui(ctx context.Context, cdir string) error {
+	defer log.Sync()
 	c := config.NewConfig(cdir)
+	c.SetCurrent(*confpath)
 	err := c.Load()
 	if err != nil {
 		return err
+	}
+	rp := flag.CommandLine.Arg(0)
+	if rp == "" {
+		return errors.New("CSVファイルの指定がありません。")
 	}
 	if _, err := CreateGraph(c, rp); err != nil {
 		log.Warnw("グラフ生成失敗", "error", err)
@@ -51,6 +66,7 @@ func Cui(ctx context.Context, cdir, rp string) error {
 // Gui GUI用メイン処理
 func Gui(ctx context.Context, cdir string) error {
 	c := config.NewConfig(cdir)
+	c.SetCurrent(*confpath)
 	err := c.Load()
 	if err != nil {
 		log.Warnw("設定ファイルの読み込みに失敗しました。", "error", err)

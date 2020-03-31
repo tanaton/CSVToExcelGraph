@@ -53,6 +53,15 @@ func (c Config) GetNameList() []string {
 	return c.namelist
 }
 
+func (c Config) GetCurretIndex() int {
+	for i, name := range c.namelist {
+		if name == c.current {
+			return i
+		}
+	}
+	return 0
+}
+
 func (c *Config) SetCurrent(name string) error {
 	p, ok := c.namemap[name]
 	if !ok {

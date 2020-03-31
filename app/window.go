@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"flag"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/lxn/walk"
 	"github.com/lxn/walk/declarative"
@@ -27,6 +29,7 @@ var rCRLF = strings.NewReplacer(
 )
 
 func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
+	var once sync.Once
 	// ダイアログオブジェクト生成
 	dialog := declarative.MainWindow{
 		AssignTo:    &mmw.MainWindow,
@@ -38,7 +41,7 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 			declarative.ComboBox{
 				AssignTo:     &mmw.xcComboConfigList,
 				Model:        mmw.conf.GetNameList(),
-				CurrentIndex: 0, // 初期値
+				CurrentIndex: mmw.conf.GetCurretIndex(), // 初期値
 				OnCurrentIndexChanged: func() {
 					txt := mmw.xcComboConfigList.Text()
 					mmw.ReadConfigName(txt)
@@ -54,10 +57,11 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 					},
 					declarative.ImageView{
 						AssignTo:   &mmw.xcImage,
-						Background: declarative.SolidColorBrush{Color: walk.RGB(255, 191, 0)},
+						Background: declarative.SolidColorBrush{Color: walk.RGB(255, 217, 0)},
 						Margin:     3,
 						Mode:       declarative.ImageViewModeZoom,
 						MinSize:    declarative.Size{Width: 806, Height: 430},
+						Image:      declarative.Bind("image()"),
 					},
 				},
 			},
@@ -85,7 +89,25 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 				},
 			},
 		},
+		Functions: map[string]func(args ...interface{}) (interface{}, error){
+			"image": func(args ...interface{}) (interface{}, error) {
+				// OnInitDialog的な使い方をしている
+				once.Do(func() {
+					rp := flag.CommandLine.Arg(0)
+					if rp != "" {
+						// 引数ありで起動された場合
+						mmw.MainWindow.Synchronize(func() {
+							// Synchronizeで後回しにすると上手く動く
+							log.Infow("起動時引数を元に変換を開始します。", "path", rp)
+							mmw.CreateGraph(rp)
+						})
+					}
+				})
+				return mmw.xcImage.Image(), nil
+			},
+		},
 	}
+	// メッセージループ起動
 	_, err := dialog.Run()
 	return err
 }
