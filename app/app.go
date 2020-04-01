@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -55,7 +54,7 @@ func Cui(ctx context.Context, cdir string) error {
 	}
 	rp := flag.CommandLine.Arg(0)
 	if rp == "" {
-		return errors.New("CSVファイルの指定がありません。")
+		return fmt.Errorf("CSVファイルの指定がありません。")
 	}
 	if _, err := CreateGraph(c, rp); err != nil {
 		log.Warnw("グラフ生成失敗", "error", err)
@@ -151,7 +150,7 @@ func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 	wfp := bufio.NewWriterSize(rawwfp, 128*1024)
 	// 各種初期化
 	hmax := 0
-	columnlist := make([]int, len(c.Columns)+1)
+	columnlist := make([]int, 1, len(c.Columns)+1)
 	g := &Graph{
 		xaxis:       int(parseColumn(c.XAxis)),
 		secondaries: make([]int, 0, len(c.Columns)),
@@ -160,7 +159,7 @@ func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 	r := bufio.NewScanner(rfp)
 	// ヘッダー
 	if r.Scan() {
-		headers := make([]string, len(c.Columns)+1)
+		headers := make([]string, 1, len(c.Columns)+1)
 		cells := strings.Split(r.Text(), ",")
 		hmax = len(cells)
 		// X軸設定
@@ -172,12 +171,19 @@ func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 			headers[0] = cell
 			columnlist[0] = g.xaxis
 		} else {
-			return nil, errors.New("X軸設定が変です")
+			return nil, fmt.Errorf("X軸設定が変です。xaxis:%d, cell_num:%d", g.xaxis, hmax)
 		}
 		// Y軸設定
 		for i, it := range c.Columns {
 			col := int(parseColumn(it.YAxis))
 			if col >= hmax {
+				log.Infow(
+					"設定で指定された列番号が存在しません",
+					"設定の列指定", it.YAxis,
+					"設定の列指定数値", col,
+					"読み込んだCSVの最右列", formatColumn(uint64(hmax)),
+					"読み込んだCSVの最右列数値", hmax,
+				)
 				continue
 			}
 			cell := cells[col]
@@ -187,24 +193,26 @@ func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 			if it.YAxisTitle != "" {
 				cell = it.YAxisTitle
 			}
-			headers[i+1] = cell
-			columnlist[i+1] = col
+			headers = append(headers, cell)
+			columnlist = append(columnlist, col)
 		}
 		fmt.Fprint(wfp, strings.Join(headers, ",")+"\r\n")
 	} else {
-		return nil, errors.New("読み取れなかったよ")
+		return nil, r.Err()
 	}
 	// データ
 	columns := make([]string, len(columnlist))
+	linenum := 1
 	for r.Scan() {
 		cells := strings.Split(r.Text(), ",")
 		if len(cells) < hmax-1 {
-			return nil, errors.New("csvのカンマの数が少ないよ")
+			return nil, fmt.Errorf("csvの区切り文字数が最初より少なくなりました。ヘッダーの区切り文字数:%d, %d行目の区切り文字数:%d", hmax, linenum, len(cells))
 		}
 		for i, it := range columnlist {
 			columns[i] = cells[it]
 		}
 		fmt.Fprint(wfp, strings.Join(columns, ",")+"\r\n")
+		linenum++
 	}
 	wfp.Flush()
 	return g, nil

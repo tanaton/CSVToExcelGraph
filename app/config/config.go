@@ -2,7 +2,7 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -65,7 +65,7 @@ func (c Config) GetCurretIndex() int {
 func (c *Config) SetCurrent(name string) error {
 	p, ok := c.namemap[name]
 	if !ok {
-		return errors.New("ファイルがありません。：" + name)
+		return fmt.Errorf("ファイルがありません。filename：%s", name)
 	}
 	c.current = p
 	return nil

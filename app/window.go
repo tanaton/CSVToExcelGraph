@@ -69,6 +69,7 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 				AssignTo:  &mmw.xcEditLog,
 				VScroll:   true,
 				MaxLength: 0x7FFFFFFF,
+				HScroll:   true,
 			},
 			declarative.PushButton{
 				Text: "ファイルを選択する",
