@@ -21,7 +21,10 @@ type MyMainWindow struct {
 	xcEditLog         *walk.TextEdit
 	conf              *config.Config
 	converting        *atomic.Bool
+	onInitDialogOnce  sync.Once
 }
+
+const APP_TITLE = "CSVToExcelGraph"
 
 var rCRLF = strings.NewReplacer(
 	"\r\n", "\r\n",
@@ -29,14 +32,16 @@ var rCRLF = strings.NewReplacer(
 )
 
 func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
-	var once sync.Once
 	// ダイアログオブジェクト生成
 	dialog := declarative.MainWindow{
 		AssignTo:    &mmw.MainWindow,
-		Title:       "CSVToExcelGraph",
+		Title:       declarative.Bind("OnInitDialog()"),
 		Size:        declarative.Size{Width: 1024, Height: 768},
 		Layout:      declarative.VBox{},
 		OnDropFiles: mmw.OnDropFiles,
+		Functions: map[string]func(args ...interface{}) (interface{}, error){
+			"OnInitDialog": mmw.OnInitDialog,
+		},
 		Children: []declarative.Widget{
 			declarative.ComboBox{
 				AssignTo:     &mmw.xcComboConfigList,
@@ -61,7 +66,6 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 						Margin:     3,
 						Mode:       declarative.ImageViewModeZoom,
 						MinSize:    declarative.Size{Width: 806, Height: 430},
-						Image:      declarative.Bind("image()"),
 					},
 				},
 			},
@@ -96,31 +100,31 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 				},
 			},
 		},
-		Functions: map[string]func(args ...interface{}) (interface{}, error){
-			"image": func(args ...interface{}) (interface{}, error) {
-				// OnInitDialog的な使い方をしている
-				once.Do(func() {
-					rp := flag.CommandLine.Arg(0)
-					if rp != "" && mmw.converting.Load() == false {
-						// 引数ありで起動された場合＆グラフ変換中ではない場合
-						mmw.MainWindow.Synchronize(func() {
-							// Synchronizeで後回しにすると上手く動く
-							log.Infow("起動時引数を元に変換を開始します。", "path", rp)
-							mmw.converting.Store(true)
-							go func() {
-								defer mmw.converting.Store(false)
-								mmw.CreateGraph(rp)
-							}()
-						})
-					}
-				})
-				return mmw.xcImage.Image(), nil
-			},
-		},
 	}
 	// メッセージループ起動
 	_, err := dialog.Run()
 	return err
+}
+
+func (mmw *MyMainWindow) OnInitDialog(args ...interface{}) (interface{}, error) {
+	// OnInitDialog的なものの定義
+	// MainWindowのTitleプロパティを借りて動作するので文字列を返す必要あり
+	mmw.onInitDialogOnce.Do(func() {
+		rp := flag.CommandLine.Arg(0)
+		if rp != "" && mmw.converting.Load() == false {
+			// 引数ありで起動された場合＆グラフ変換中ではない場合
+			mmw.MainWindow.Synchronize(func() {
+				// Synchronizeで後回しにすると上手く動く
+				log.Infow("起動時引数を元に変換を開始します。", "path", rp)
+				mmw.converting.Store(true)
+				go func() {
+					defer mmw.converting.Store(false)
+					mmw.CreateGraph(rp)
+				}()
+			})
+		}
+	})
+	return APP_TITLE, nil
 }
 
 func (mmw *MyMainWindow) Write(b []byte) (n int, err error) {
