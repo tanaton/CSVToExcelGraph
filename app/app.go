@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"testing"
 
 	"github.com/tanaton/CSVToExcelGraph/app/config"
 	"github.com/tanaton/CSVToExcelGraph/app/graph"
@@ -39,6 +40,7 @@ var (
 )
 
 func init() {
+	testing.Init() // flag.Parseによりテストフラグが処理されてテストが失敗するので追加
 	flag.Parse()
 }
 
@@ -208,7 +210,7 @@ func ReduceCSV(c *config.Config, rp, wp string) (*Graph, error) {
 	return g, nil
 }
 
-// Go標準ライブラリ[src/strconv/itoa.go formatBits]から丸パクリ
+// Go標準ライブラリ[src/strconv/itoa.go formatBits]を参考に改造
 const digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func formatColumn(u uint64) string {
@@ -218,14 +220,14 @@ func formatColumn(u uint64) string {
 		i--
 		q := u / 26
 		a[i] = digits[uint(u-q*26)]
-		u = q
+		u = q - 1 // Z→AAに繰り上がる場合、10進数で9→00になるのと同じなので改造
 	}
 	i--
 	a[i] = digits[uint(u)]
 	return string(a[i:])
 }
 
-// Go標準ライブラリ[src/strconv/atoi.go ParseUint]から丸パクリ
+// Go標準ライブラリ[src/strconv/atoi.go ParseUint]を参考に改造
 const intSize = 32 << (^uint(0) >> 63)
 const maxUint64 = 1<<64 - 1
 
@@ -240,7 +242,7 @@ func parseColumn(s string) uint64 {
 	maxVal := uint64(1)<<uint(bitSize) - 1
 	var cutoff uint64 = maxUint64/26 + 1
 	var n uint64
-	for _, c := range []byte(s) {
+	for i, c := range []byte(s) {
 		var d byte
 		switch {
 		case 'a' <= lower(c) && lower(c) <= 'z':
@@ -256,7 +258,12 @@ func parseColumn(s string) uint64 {
 			// n*base overflows
 			return maxVal
 		}
-		n *= 26
+		// AA=26とした場合、10進数で00=10とするのと同じなので改造
+		if i >= 1 {
+			n = (n + 1) * 26
+		} else {
+			n *= 26
+		}
 
 		n1 := n + uint64(d)
 		if n1 < n || n1 > maxVal {
