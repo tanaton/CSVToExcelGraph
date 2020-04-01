@@ -98,6 +98,10 @@ func UpdateLogger(out io.Writer) {
 	log = logger.Sugar()
 }
 
+func GetLog() *zap.SugaredLogger {
+	return log
+}
+
 func checkExtList(list []string, ext string) bool {
 	if len(list) <= 0 {
 		return false
