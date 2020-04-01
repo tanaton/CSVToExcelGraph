@@ -89,10 +89,10 @@ func UpdateLogger(out io.Writer) {
 	if log != nil {
 		log.Sync()
 	}
-	c := zap.NewProductionEncoderConfig()
+	c := zap.NewDevelopmentEncoderConfig()
 	c.LineEnding = "\r\n"
 	logger := zap.New(zapcore.NewCore(
-		zapcore.NewJSONEncoder(c),
+		zapcore.NewConsoleEncoder(c),
 		zapcore.AddSync(out),
 		zap.InfoLevel,
 	))
