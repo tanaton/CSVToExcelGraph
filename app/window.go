@@ -81,10 +81,16 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 						log.Warnw("選択したファイルが開けませんでした。", "error", err)
 					} else if !ok {
 						log.Infow("キャンセルしました。")
+					} else if mmw.converting.Load() {
+						log.Infow("グラフ生成中に新しく選択されたファイルは無視されます。")
 					} else {
 						rp := dlg.FilePath
 						log.Infow("選択", "path", rp)
-						mmw.CreateGraph(rp)
+						mmw.converting.Store(true)
+						go func() {
+							defer mmw.converting.Store(false)
+							mmw.CreateGraph(rp)
+						}()
 					}
 				},
 			},
@@ -94,12 +100,16 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 				// OnInitDialog的な使い方をしている
 				once.Do(func() {
 					rp := flag.CommandLine.Arg(0)
-					if rp != "" {
-						// 引数ありで起動された場合
+					if rp != "" && mmw.converting.Load() == false {
+						// 引数ありで起動された場合＆グラフ変換中ではない場合
 						mmw.MainWindow.Synchronize(func() {
 							// Synchronizeで後回しにすると上手く動く
 							log.Infow("起動時引数を元に変換を開始します。", "path", rp)
-							mmw.CreateGraph(rp)
+							mmw.converting.Store(true)
+							go func() {
+								defer mmw.converting.Store(false)
+								mmw.CreateGraph(rp)
+							}()
 						})
 					}
 				})
@@ -124,10 +134,10 @@ func (mmw *MyMainWindow) OnDropFiles(files []string) {
 	if mmw.converting.Load() {
 		log.Infow("グラフ生成中に新しくドロップされたファイルは無視されます。")
 	} else if checkExtList(files, ".csv") {
-		mmw.converting.Store(true)
 		num := runtime.NumCPU()
 		log.Infow("ファイルがドロップされました。", "ファイル数", len(files), "並列数", num)
 		// メッセージループを止めないようにgoroutineを起動させる
+		mmw.converting.Store(true)
 		go func(files []string, num int) {
 			c := make(chan struct{}, num)
 			defer func() {
