@@ -16,6 +16,7 @@ type Column struct {
 type Config struct {
 	XAxis      string
 	XAxisTitle string `json:",omitempty"`
+	ReduceRows int    `json:",omitempty"`
 	Columns    []Column
 
 	cdir     string
