@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -28,11 +27,6 @@ var pngEncoder = png.Encoder{
 }
 
 type CSV struct {
-	raww        io.WriteCloser
-	rawr        io.ReadCloser
-	w           *bufio.Writer
-	scanner     *bufio.Scanner
-	finish      bool
 	hmax        int
 	linenum     int
 	columnlist  []int
@@ -127,7 +121,7 @@ func CreateGraph(c *config.Config, rp string) (string, error) {
 	csvname := strings.TrimRight(name, filepath.Ext(rp)) + "_graph.csv"
 	dp, _ := filepath.Abs(filepath.Join(dir, csvname))
 	// 間引き
-	csv, err := ReduceCSV(c, rp, dp)
+	csv, err := reduceCSV(c, rp, dp)
 	if err != nil {
 		return "", err
 	}
@@ -148,35 +142,27 @@ func CreateGraph(c *config.Config, rp string) (string, error) {
 	return ip, err
 }
 
-func ReduceCSV(c *config.Config, rp, wp string) (*CSV, error) {
-	csv, err := NewCSVReducer(c, rp, wp)
+func reduceCSV(c *config.Config, rp, wp string) (*CSV, error) {
+	swc, err := NewScanWriteCloser(rp, wp)
 	if err != nil {
 		return nil, err
 	}
-	defer csv.Close()
+	defer swc.Close()
+	csv := NewCSVReducer(c)
 	// ヘッダー
-	err = csv.scanHeader(c)
+	err = csv.scanHeader(swc, c)
 	if err != nil {
 		return nil, err
 	}
 	// データ
-	err = csv.scanData()
+	err = csv.scanData(swc)
 	if err != nil {
 		return nil, err
 	}
 	return csv, nil
 }
 
-func NewCSVReducer(c *config.Config, rp, wp string) (*CSV, error) {
-	rawr, err := os.Open(rp)
-	if err != nil {
-		return nil, err
-	}
-	raww, werr := os.Create(wp)
-	if werr != nil {
-		rawr.Close()
-		return nil, werr
-	}
+func NewCSVReducer(c *config.Config) *CSV {
 	var f func(int, []string) bool
 	if c.ReduceRows > 0 {
 		f = func(rows int) func(int, []string) bool {
@@ -190,102 +176,70 @@ func NewCSVReducer(c *config.Config, rp, wp string) (*CSV, error) {
 		}(c.ReduceRows)
 	}
 	return &CSV{
-		raww:        raww,
-		rawr:        rawr,
-		w:           bufio.NewWriterSize(raww, 128*1024),
-		scanner:     bufio.NewScanner(rawr),
-		finish:      false,
 		hmax:        0,
 		linenum:     0,
 		columnlist:  make([]int, 1, len(c.Columns)+1),
 		secondaries: make([]int, 0, len(c.Columns)),
 		reduceFunc:  f,
-	}, nil
+	}
 }
 
-func (csv *CSV) Close() error {
-	var err error
-	if csv.w != nil {
-		e := csv.w.Flush()
-		if e != nil {
-			err = e
-		}
-		csv.w = nil
-	}
-	if csv.raww != nil {
-		e := csv.raww.Close()
-		if e != nil {
-			err = e
-		}
-		csv.raww = nil
-	}
-	if csv.rawr != nil {
-		e := csv.rawr.Close()
-		if e != nil {
-			err = e
-		}
-		csv.rawr = nil
-	}
-	return err
-}
-
-func (csv *CSV) scanHeader(c *config.Config) error {
+func (csv *CSV) scanHeader(swc ScanWriteCloser, c *config.Config) error {
 	xaxis := int(parseColumn(c.XAxis))
 	// ヘッダー
-	if csv.scanner.Scan() {
-		csv.linenum++
-		headers := make([]string, 1, len(c.Columns)+1)
-		cells := strings.Split(csv.scanner.Text(), ",")
-		csv.hmax = len(cells)
-		// X軸設定
-		if xaxis < csv.hmax {
-			cell := cells[xaxis]
-			if c.XAxisTitle != "" {
-				cell = c.XAxisTitle
-			}
-			headers[0] = cell
-			csv.columnlist[0] = xaxis
-		} else {
-			return fmt.Errorf("X軸設定が変です。xaxis:%d, cell_num:%d", xaxis, csv.hmax)
-		}
-		// Y軸設定
-		for i, it := range c.Columns {
-			col := int(parseColumn(it.YAxis))
-			if col >= csv.hmax {
-				log.Infow(
-					"設定で指定された列番号が存在しません",
-					"設定の列指定", it.YAxis,
-					"設定の列指定数値", col,
-					"読み込んだCSVの最右列", formatColumn(uint64(csv.hmax)),
-					"読み込んだCSVの最右列数値", csv.hmax,
-				)
-				continue
-			}
-			cell := cells[col]
-			if it.YAxisSecondary {
-				csv.secondaries = append(csv.secondaries, i+1)
-			}
-			if it.YAxisTitle != "" {
-				cell = it.YAxisTitle
-			}
-			headers = append(headers, cell)
-			csv.columnlist = append(csv.columnlist, col)
-		}
-		fmt.Fprint(csv.w, strings.Join(headers, ",")+"\r\n")
-	} else {
-		return csv.scanner.Err()
+	if swc.Scan() == false {
+		return swc.Err()
 	}
+	csv.linenum++
+	headers := make([]string, 1, len(c.Columns)+1)
+	cells := strings.Split(swc.Text(), ",")
+	csv.hmax = len(cells)
+	// X軸設定
+	if xaxis < csv.hmax {
+		cell := cells[xaxis]
+		if c.XAxisTitle != "" {
+			cell = c.XAxisTitle
+		}
+		headers[0] = cell
+		csv.columnlist[0] = xaxis
+	} else {
+		return fmt.Errorf("X軸設定が変です。xaxis:%d, cell_num:%d", xaxis, csv.hmax)
+	}
+	// Y軸設定
+	for i, it := range c.Columns {
+		col := int(parseColumn(it.YAxis))
+		if col >= csv.hmax {
+			log.Infow(
+				"設定で指定された列番号が存在しません",
+				"設定の列指定", it.YAxis,
+				"設定の列指定数値", col,
+				"読み込んだCSVの最右列", formatColumn(uint64(csv.hmax)),
+				"読み込んだCSVの最右列数値", csv.hmax,
+			)
+			continue
+		}
+		cell := cells[col]
+		if it.YAxisSecondary {
+			csv.secondaries = append(csv.secondaries, i+1)
+		}
+		if it.YAxisTitle != "" {
+			cell = it.YAxisTitle
+		}
+		headers = append(headers, cell)
+		csv.columnlist = append(csv.columnlist, col)
+	}
+	fmt.Fprint(swc, strings.Join(headers, ",")+"\r\n")
 	return nil
 }
 
-func (csv *CSV) scanData() error {
+func (csv *CSV) scanData(swc ScanWriteCloser) error {
 	if csv.linenum <= 0 {
 		return fmt.Errorf("CSVのヘッダーを読み込んでいません。")
 	}
 	columns := make([]string, len(csv.columnlist))
-	for csv.scanner.Scan() {
+	for swc.Scan() {
 		csv.linenum++
-		cells := strings.Split(csv.scanner.Text(), ",")
+		cells := strings.Split(swc.Text(), ",")
 		if len(cells) < csv.hmax-1 {
 			return fmt.Errorf("csvの区切り文字数が最初より少なくなりました。ヘッダーの区切り文字数:%d, %d行目の区切り文字数:%d", csv.hmax, csv.linenum, len(cells))
 		}
@@ -295,10 +249,9 @@ func (csv *CSV) scanData() error {
 			for i, it := range csv.columnlist {
 				columns[i] = cells[it]
 			}
-			fmt.Fprint(csv.w, strings.Join(columns, ",")+"\r\n")
+			fmt.Fprint(swc, strings.Join(columns, ",")+"\r\n")
 		}
 	}
-	csv.finish = true
 	return nil
 }
 
