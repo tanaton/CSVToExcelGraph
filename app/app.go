@@ -216,11 +216,9 @@ func (csv *CSV) headerString(cells []string, cl []config.Column) string {
 			cell = it.AxisTitle
 		}
 		headers = append(headers, cell)
-		if i > 0 {
-			csv.columnlist = append(csv.columnlist, col)
-			if it.AxisSecondary {
-				csv.secondaries = append(csv.secondaries, i)
-			}
+		csv.columnlist = append(csv.columnlist, col)
+		if i > 0 && it.AxisSecondary {
+			csv.secondaries = append(csv.secondaries, i)
 		}
 	}
 	return strings.Join(headers, ",")
