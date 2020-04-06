@@ -8,16 +8,15 @@ import (
 )
 
 type Column struct {
-	YAxis          string
-	YAxisTitle     string `json:",omitempty"`
-	YAxisSecondary bool   `json:",omitempty"`
+	Axis          string
+	AxisTitle     string `json:",omitempty"`
+	AxisSecondary bool   `json:",omitempty"`
 }
 
 type Config struct {
-	XAxis      string
-	XAxisTitle string `json:",omitempty"`
-	ReduceRows int    `json:",omitempty"`
-	Columns    []Column
+	XColumn    Column
+	YColumns   []Column
+	ReduceRows int `json:",omitempty"`
 
 	cdir     string
 	current  string

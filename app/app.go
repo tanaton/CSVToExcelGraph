@@ -178,40 +178,33 @@ func NewCSVReducer(c *config.Config) *CSV {
 	return &CSV{
 		hmax:        0,
 		linenum:     0,
-		columnlist:  make([]int, 1, len(c.Columns)+1),
-		secondaries: make([]int, 0, len(c.Columns)),
+		columnlist:  make([]int, 0, len(c.YColumns)+1),
+		secondaries: make([]int, 0, len(c.YColumns)+1),
 		reduceFunc:  f,
 	}
 }
 
 func (csv *CSV) scanHeader(swc ScanWriteCloser, c *config.Config) error {
-	xaxis := int(parseColumn(c.XAxis))
 	// ヘッダー
 	if swc.Scan() == false {
 		return swc.Err()
 	}
 	csv.linenum++
-	headers := make([]string, 1, len(c.Columns)+1)
+	cl := append([]config.Column{c.XColumn}, c.YColumns...)
 	cells := strings.Split(swc.Text(), ",")
 	csv.hmax = len(cells)
-	// X軸設定
-	if xaxis < csv.hmax {
-		cell := cells[xaxis]
-		if c.XAxisTitle != "" {
-			cell = c.XAxisTitle
-		}
-		headers[0] = cell
-		csv.columnlist[0] = xaxis
-	} else {
-		return fmt.Errorf("X軸設定が変です。xaxis:%d, cell_num:%d", xaxis, csv.hmax)
-	}
-	// Y軸設定
-	for i, it := range c.Columns {
-		col := int(parseColumn(it.YAxis))
+	fmt.Fprint(swc, csv.headerString(cells, cl)+"\r\n")
+	return nil
+}
+
+func (csv *CSV) headerString(cells []string, cl []config.Column) string {
+	headers := make([]string, 0, len(cl))
+	for i, it := range cl {
+		col := int(parseColumn(it.Axis))
 		if col >= csv.hmax {
 			log.Infow(
 				"設定で指定された列番号が存在しません",
-				"設定の列指定", it.YAxis,
+				"設定の列指定", it.Axis,
 				"設定の列指定数値", col,
 				"読み込んだCSVの最右列", formatColumn(uint64(csv.hmax)),
 				"読み込んだCSVの最右列数値", csv.hmax,
@@ -219,17 +212,18 @@ func (csv *CSV) scanHeader(swc ScanWriteCloser, c *config.Config) error {
 			continue
 		}
 		cell := cells[col]
-		if it.YAxisSecondary {
-			csv.secondaries = append(csv.secondaries, i+1)
-		}
-		if it.YAxisTitle != "" {
-			cell = it.YAxisTitle
+		if it.AxisTitle != "" {
+			cell = it.AxisTitle
 		}
 		headers = append(headers, cell)
-		csv.columnlist = append(csv.columnlist, col)
+		if i > 0 {
+			csv.columnlist = append(csv.columnlist, col)
+			if it.AxisSecondary {
+				csv.secondaries = append(csv.secondaries, i)
+			}
+		}
 	}
-	fmt.Fprint(swc, strings.Join(headers, ",")+"\r\n")
-	return nil
+	return strings.Join(headers, ",")
 }
 
 func (csv *CSV) scanData(swc ScanWriteCloser) error {

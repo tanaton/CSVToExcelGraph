@@ -1,19 +1,21 @@
 {
-    "XAxis": "A",
-    "Columns": [
+    "XColumn": {
+        "Axis": "A"
+    },
+    "YColumns": [
         {
-            "YAxis": "K"
+            "Axis": "K"
         },
         {
-            "YAxis": "R"
+            "Axis": "R"
         },
         {
-            "YAxis": "U",
-            "YAxisSecondary": true
+            "Axis": "U",
+            "AxisSecondary": true
         },
         {
-            "YAxis": "W",
-            "YAxisSecondary": true
+            "Axis": "W",
+            "AxisSecondary": true
         }
     ]
 }
