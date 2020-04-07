@@ -29,8 +29,8 @@ var pngEncoder = png.Encoder{
 	BufferPool:       newPngPool(),
 }
 
-// CSV csv用データ構造
-type CSV struct {
+// CSVReducer csvデータ削減用構造体
+type CSVReducer struct {
 	hmax        int
 	linenum     int
 	columnlist  []int
@@ -156,7 +156,7 @@ func CreateGraph(c *config.Config, rp string) (string, error) {
 	return ip, nil
 }
 
-func reduceCSV(c *config.Config, rp, wp string) (*CSV, error) {
+func reduceCSV(c *config.Config, rp, wp string) (*CSVReducer, error) {
 	swc, err := NewScanWriteCloser(rp, wp)
 	if err != nil {
 		return nil, err
@@ -177,7 +177,7 @@ func reduceCSV(c *config.Config, rp, wp string) (*CSV, error) {
 }
 
 // NewCSVReducer CSV間引き用構造体生成
-func NewCSVReducer(c *config.Config) *CSV {
+func NewCSVReducer(c *config.Config) *CSVReducer {
 	var f func(int, []string) bool
 	if c.ReduceRows > 0 {
 		f = func(rows int) func(int, []string) bool {
@@ -190,7 +190,7 @@ func NewCSVReducer(c *config.Config) *CSV {
 			}
 		}(c.ReduceRows)
 	}
-	return &CSV{
+	return &CSVReducer{
 		hmax:        0,
 		linenum:     0,
 		columnlist:  make([]int, 0, len(c.YColumns)+1),
@@ -199,7 +199,7 @@ func NewCSVReducer(c *config.Config) *CSV {
 	}
 }
 
-func (csv *CSV) scanHeader(swc ScanWriteCloser, c *config.Config) error {
+func (csv *CSVReducer) scanHeader(swc ScanWriteCloser, c *config.Config) error {
 	// ヘッダー
 	if swc.Scan() == false {
 		return swc.Err()
@@ -212,7 +212,7 @@ func (csv *CSV) scanHeader(swc ScanWriteCloser, c *config.Config) error {
 	return nil
 }
 
-func (csv *CSV) headerString(cells []string, cl []config.Column) string {
+func (csv *CSVReducer) headerString(cells []string, cl []config.Column) string {
 	for i, it := range cl {
 		col := int(parseColumn(it.Axis))
 		if col >= csv.hmax {
@@ -238,7 +238,7 @@ func (csv *CSV) headerString(cells []string, cl []config.Column) string {
 	return strings.Join(csv.bufcolumns[:len(csv.columnlist)], ",")
 }
 
-func (csv *CSV) scanData(swc ScanWriteCloser) error {
+func (csv *CSVReducer) scanData(swc ScanWriteCloser) error {
 	if csv.linenum <= 0 {
 		return fmt.Errorf("CSVのヘッダーを読み込んでいません。")
 	}
@@ -254,10 +254,10 @@ func (csv *CSV) scanData(swc ScanWriteCloser) error {
 			swc.WriteString(csv.dataString(cells) + Newline)
 		}
 	}
-	return nil
+	return swc.Err()
 }
 
-func (csv *CSV) dataString(cells []string) string {
+func (csv *CSVReducer) dataString(cells []string) string {
 	for i, it := range csv.columnlist {
 		csv.bufcolumns[i] = cells[it]
 	}

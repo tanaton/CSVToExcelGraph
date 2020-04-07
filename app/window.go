@@ -13,6 +13,7 @@ import (
 	"go.uber.org/atomic"
 )
 
+// MyMainWindow メインウインドウ構造体
 type MyMainWindow struct {
 	*walk.MainWindow
 	xcComboConfigList *walk.ComboBox
@@ -24,13 +25,15 @@ type MyMainWindow struct {
 	onInitDialogOnce  sync.Once
 }
 
-const APP_TITLE = "CSVToExcelGraph"
+// AppTitle アプリケーション名
+const AppTitle = "CSVToExcelGraph"
 
 var rCRLF = strings.NewReplacer(
 	"\r\n", "\r\n",
 	"\n", "\r\n",
 )
 
+// CreateDialog ダイアログ生成
 func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 	// ダイアログオブジェクト生成
 	dialog := declarative.MainWindow{
@@ -106,6 +109,7 @@ func (mmw *MyMainWindow) CreateDialog(ctx context.Context) error {
 	return err
 }
 
+// OnInitDialog ダイアログ生成時に呼び出される
 func (mmw *MyMainWindow) OnInitDialog(args ...interface{}) (interface{}, error) {
 	// OnInitDialog的なものの定義
 	// MainWindowのTitleプロパティを借りて動作するので文字列を返す必要あり
@@ -124,7 +128,7 @@ func (mmw *MyMainWindow) OnInitDialog(args ...interface{}) (interface{}, error) 
 			})
 		}
 	})
-	return APP_TITLE, nil
+	return AppTitle, nil
 }
 
 func (mmw *MyMainWindow) Write(b []byte) (n int, err error) {
@@ -135,6 +139,7 @@ func (mmw *MyMainWindow) Write(b []byte) (n int, err error) {
 	return len(b), nil
 }
 
+// OnDropFiles ドロップイベントハンドラ
 func (mmw *MyMainWindow) OnDropFiles(files []string) {
 	if mmw.converting.Load() {
 		log.Infow("グラフ生成中に新しくドロップされたファイルは無視されます。")
@@ -171,6 +176,7 @@ func (mmw *MyMainWindow) OnDropFiles(files []string) {
 	}
 }
 
+// ReadConfigName 設定ファイル読み込み
 func (mmw *MyMainWindow) ReadConfigName(name string) {
 	err := mmw.conf.SetCurrent(name)
 	if err != nil {
@@ -187,6 +193,7 @@ func (mmw *MyMainWindow) ReadConfigName(name string) {
 	}
 }
 
+// CreateGraph GUI側グラフ生成関数読み出し
 func (mmw *MyMainWindow) CreateGraph(rp string) {
 	log.Infow("グラフ生成開始", "path", rp)
 	if ip, err := CreateGraph(mmw.conf, rp); err != nil {

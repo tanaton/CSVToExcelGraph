@@ -8,6 +8,7 @@ import (
 
 const writeBuffSize = 128 * 1024
 
+// ScanWriteCloser 読み書き用
 type ScanWriteCloser interface {
 	io.StringWriter
 	io.Writer
@@ -24,6 +25,7 @@ type scannerWriter struct {
 	rawr io.ReadCloser
 }
 
+// NewScanWriteCloser ScanWriteCloser生成用
 func NewScanWriteCloser(rp, wp string) (ScanWriteCloser, error) {
 	rawr, err := os.Open(rp)
 	if err != nil {
