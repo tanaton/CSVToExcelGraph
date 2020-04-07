@@ -9,6 +9,7 @@ import (
 const writeBuffSize = 128 * 1024
 
 type ScanWriteCloser interface {
+	io.StringWriter
 	io.Writer
 	io.Closer
 	Err() error

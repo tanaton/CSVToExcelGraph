@@ -21,17 +21,22 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// Newline 改行コードの指定
+const Newline = "\r\n"
+
 var pngEncoder = png.Encoder{
 	CompressionLevel: png.BestCompression,
-	BufferPool:       NewPngPool(),
+	BufferPool:       newPngPool(),
 }
 
+// CSV csv用データ構造
 type CSV struct {
 	hmax        int
 	linenum     int
 	columnlist  []int
 	secondaries []int
 	reduceFunc  func(linenum int, cells []string) bool
+	bufcolumns  [256]string
 }
 
 var log *zap.SugaredLogger
@@ -91,7 +96,7 @@ func UpdateLogger(out io.Writer) {
 		log.Sync()
 	}
 	c := zap.NewDevelopmentEncoderConfig()
-	c.LineEnding = "\r\n"
+	c.LineEnding = Newline
 	logger := zap.New(zapcore.NewCore(
 		zapcore.NewConsoleEncoder(c),
 		zapcore.AddSync(out),
@@ -100,6 +105,7 @@ func UpdateLogger(out io.Writer) {
 	log = logger.Sugar()
 }
 
+// GetLog アプリ部で使用するロガーの取得
 func GetLog() *zap.SugaredLogger {
 	return log
 }
@@ -116,6 +122,7 @@ func checkExtList(list []string, ext string) bool {
 	return true
 }
 
+// CreateGraph グラフ生成メイン処理呼び出し
 func CreateGraph(c *config.Config, rp string) (string, error) {
 	dir, name := filepath.Split(rp)
 	csvname := strings.TrimRight(name, filepath.Ext(rp)) + "_graph.csv"
@@ -133,13 +140,20 @@ func CreateGraph(c *config.Config, rp string) (string, error) {
 	err = graph.Excelgraph(dp, wp, ip, csv.secondaries)
 	// スレッドの固定を解除する（※ゴールーチンを抜けると自動でアンロックされる）
 	runtime.UnlockOSThread()
-	os.Remove(dp)
+	if err != nil {
+		return "", err
+	}
+	// 一時ファイルの削除
+	err = os.Remove(dp)
 	if err != nil {
 		return "", err
 	}
 	// 生成されたpngの圧縮率が微妙なので再圧縮
 	err = regenePNG(ip)
-	return ip, err
+	if err != nil {
+		return "", err
+	}
+	return ip, nil
 }
 
 func reduceCSV(c *config.Config, rp, wp string) (*CSV, error) {
@@ -162,6 +176,7 @@ func reduceCSV(c *config.Config, rp, wp string) (*CSV, error) {
 	return csv, nil
 }
 
+// NewCSVReducer CSV間引き用構造体生成
 func NewCSVReducer(c *config.Config) *CSV {
 	var f func(int, []string) bool
 	if c.ReduceRows > 0 {
@@ -193,12 +208,11 @@ func (csv *CSV) scanHeader(swc ScanWriteCloser, c *config.Config) error {
 	cl := append([]config.Column{c.XColumn}, c.YColumns...)
 	cells := strings.Split(swc.Text(), ",")
 	csv.hmax = len(cells)
-	fmt.Fprint(swc, csv.headerString(cells, cl)+"\r\n")
+	swc.WriteString(csv.headerString(cells, cl) + Newline)
 	return nil
 }
 
 func (csv *CSV) headerString(cells []string, cl []config.Column) string {
-	headers := make([]string, 0, len(cl))
 	for i, it := range cl {
 		col := int(parseColumn(it.Axis))
 		if col >= csv.hmax {
@@ -215,20 +229,19 @@ func (csv *CSV) headerString(cells []string, cl []config.Column) string {
 		if it.AxisTitle != "" {
 			cell = it.AxisTitle
 		}
-		headers = append(headers, cell)
+		csv.bufcolumns[i] = cell
 		csv.columnlist = append(csv.columnlist, col)
 		if i > 0 && it.AxisSecondary {
 			csv.secondaries = append(csv.secondaries, i)
 		}
 	}
-	return strings.Join(headers, ",")
+	return strings.Join(csv.bufcolumns[:len(csv.columnlist)], ",")
 }
 
 func (csv *CSV) scanData(swc ScanWriteCloser) error {
 	if csv.linenum <= 0 {
 		return fmt.Errorf("CSVのヘッダーを読み込んでいません。")
 	}
-	columns := make([]string, len(csv.columnlist))
 	for swc.Scan() {
 		csv.linenum++
 		cells := strings.Split(swc.Text(), ",")
@@ -238,13 +251,17 @@ func (csv *CSV) scanData(swc ScanWriteCloser) error {
 		if csv.reduceFunc != nil && csv.reduceFunc(csv.linenum, cells) {
 			// 間引く行の場合
 		} else {
-			for i, it := range csv.columnlist {
-				columns[i] = cells[it]
-			}
-			fmt.Fprint(swc, strings.Join(columns, ",")+"\r\n")
+			swc.WriteString(csv.dataString(cells) + Newline)
 		}
 	}
 	return nil
+}
+
+func (csv *CSV) dataString(cells []string) string {
+	for i, it := range csv.columnlist {
+		csv.bufcolumns[i] = cells[it]
+	}
+	return strings.Join(csv.bufcolumns[:len(csv.columnlist)], ",")
 }
 
 // Go標準ライブラリ[src/strconv/itoa.go formatBits]を参考に改造
@@ -334,12 +351,12 @@ func openImage(ip string) (image.Image, error) {
 	return png.Decode(rp)
 }
 
-type PngPool struct {
+type pngPool struct {
 	pool sync.Pool
 }
 
-func NewPngPool() *PngPool {
-	return &PngPool{
+func newPngPool() *pngPool {
+	return &pngPool{
 		pool: sync.Pool{
 			New: func() interface{} {
 				return &png.EncoderBuffer{}
@@ -347,9 +364,9 @@ func NewPngPool() *PngPool {
 		},
 	}
 }
-func (p *PngPool) Get() *png.EncoderBuffer {
+func (p *pngPool) Get() *png.EncoderBuffer {
 	return p.pool.Get().(*png.EncoderBuffer)
 }
-func (p *PngPool) Put(buf *png.EncoderBuffer) {
+func (p *pngPool) Put(buf *png.EncoderBuffer) {
 	p.pool.Put(buf)
 }
